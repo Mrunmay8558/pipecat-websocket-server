@@ -109,7 +109,6 @@ async def main():
         voice_id="791d5162-d5eb-40f0-8189-f19db44611d8",  
     )
     
-    logger.info(f"transport metadata {transport}")
     
     memory = Mem0MemoryService(
         api_key=os.getenv("MEMO_API_KEY"),
@@ -119,7 +118,7 @@ async def main():
     messages = [
         {
             "role": "system",
-            "content": "You are Rahul,LLM in a WebRTC call and helpful assistant. Your primary task is to answer questions raised by users in Hinglish (Hindi-English mix) in a meaningful way. Respond creatively and helpfully to what users say. Since your output will be converted to audio, avoid using special characters in your answers. Maintain a warm, professional tone throughout the conversation.",
+            "content": icici_prompt,
         },
     ]
 
