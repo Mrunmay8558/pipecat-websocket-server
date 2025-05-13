@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  websocket-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8765:8765" # WebSocket server port
+      - "8000:8000" # HTTP server port (if needed)
+    volumes:
+      # Mount .env file separately
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Fix for SSL certificate verification issues
+      - SSL_CERT_DIR=/etc/ssl/certs
+      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+      - PYTHONHTTPSVERIFY=1
+    restart: unless-stopped
