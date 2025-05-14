@@ -1,211 +1,600 @@
 <!DOCTYPE html>
 <html lang="en">
 
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.X.X/dist/protobuf.min.js"></script>
-    <title>Pipecat WebSocket Client Example</title>
-  </head>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.X.X/dist/protobuf.min.js"></script>
+  <title>Pipecat WebSocket Client Example</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f7f9fc;
+      color: #333;
+      line-height: 1.6;
+    }
 
-  <body>
-    <h1>Pipecat WebSocket Client Example</h1>
-    <h3><div id="progressText">Loading, wait...</div></h2>
-    <button id="startAudioBtn">Start Audio</button>
-    <button id="stopAudioBtn">Stop Audio</button>
-    <script>
-      const SAMPLE_RATE = 16000;
-      const NUM_CHANNELS = 1;
-      const PLAY_TIME_RESET_THRESHOLD_MS = 1.0;
+    h1 {
+      color: #2c3e50;
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 10px;
+    }
 
-      // The protobuf type. We will load it later.
-      let Frame = null;
+    .status-container {
+      background-color: #e8f4f8;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 25px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
 
-      // The websocket connection.
-      let ws = null;
+    #progressText {
+      font-weight: bold;
+      color: #2980b9;
+    }
 
-      // The audio context
-      let audioContext = null;
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
 
-      // The audio context media stream source
-      let source = null;
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
 
-      // The microphone stream from getUserMedia. SHould be sampled to the
-      // proper sample rate.
-      let microphoneStream = null;
+    button {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 16px;
+      transition: all 0.2s ease;
+    }
 
-      // Script processor to get data from microphone.
-      let scriptProcessor = null;
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
 
-      // AudioContext play time.
-      let playTime = 0;
+    .btn-primary {
+      background-color: #3498db;
+      color: white;
+    }
 
-      // Last time we received a websocket message.
-      let lastMessageTime = 0;
+    .btn-danger {
+      background-color: #e74c3c;
+      color: white;
+    }
 
-      // Whether we should be playing audio.
-      let isPlaying = false;
+    .btn-secondary {
+      background-color: #7f8c8d;
+      color: white;
+    }
 
-      let startBtn = document.getElementById('startAudioBtn');
-      let stopBtn = document.getElementById('stopAudioBtn');
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
 
-      const proto = protobuf.load('frames.proto', (err, root) => {
-          if (err) {
-              throw err;
+    .slider-container {
+      margin: 10px 0;
+    }
+
+    .slider-container label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+      color: #555;
+    }
+
+    .volume-slider {
+      width: 100%;
+      height: 8px;
+    }
+
+    .audio-meters {
+      display: flex;
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    .meter {
+      flex: 1;
+      padding: 10px;
+      border-radius: 6px;
+      background-color: #f1f1f1;
+    }
+
+    .meter-label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #555;
+    }
+
+    .meter-bar {
+      height: 20px;
+      width: 100%;
+      background-color: #ecf0f1;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .meter-fill {
+      height: 100%;
+      width: 0%;
+      background-color: #3498db;
+      transition: width 0.1s ease;
+    }
+
+    .connection-status {
+      padding: 8px 12px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-top: 15px;
+      font-weight: bold;
+    }
+
+    .status-disconnected {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+
+    .status-connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+
+    .log-section {
+      margin-top: 20px;
+    }
+
+    .log-container {
+      height: 150px;
+      overflow-y: auto;
+      background-color: #2c3e50;
+      color: #ecf0f1;
+      padding: 10px;
+      border-radius: 6px;
+      font-family: monospace;
+    }
+
+    #logContent {
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Pipecat WebSocket Client Example</h1>
+  
+  <div class="status-container">
+    <h3><div id="progressText">Loading protocol buffers, please wait...</div></h3>
+    <div id="connectionStatus" class="connection-status status-disconnected">Disconnected</div>
+  </div>
+
+  <div class="control-panel">
+    <div class="btn-row">
+      <button id="startAudioBtn" class="btn-primary">Start Audio</button>
+      <button id="stopAudioBtn" class="btn-danger">Stop Audio</button>
+      <button id="muteBtn" class="btn-secondary">Mute Microphone</button>
+      <button id="clearLogBtn" class="btn-secondary">Clear Log</button>
+    </div>
+
+    <div class="slider-container">
+      <label for="volumeControl">Speaker Volume: <span id="volumeValue">100%</span></label>
+      <input type="range" id="volumeControl" class="volume-slider" min="0" max="1" step="0.01" value="1">
+    </div>
+
+    <div class="slider-container">
+      <label for="micVolumeControl">Microphone Sensitivity: <span id="micVolumeValue">100%</span></label>
+      <input type="range" id="micVolumeControl" class="volume-slider" min="0" max="2" step="0.01" value="1">
+    </div>
+
+    <div class="audio-meters">
+      <div class="meter">
+        <span class="meter-label">Input Level</span>
+        <div class="meter-bar">
+          <div id="inputLevelMeter" class="meter-fill"></div>
+        </div>
+      </div>
+      <div class="meter">
+        <span class="meter-label">Output Level</span>
+        <div class="meter-bar">
+          <div id="outputLevelMeter" class="meter-fill"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="log-section">
+    <h3>Connection Log</h3>
+    <div class="log-container">
+      <div id="logContent"></div>
+    </div>
+  </div>
+
+  <script>
+    const SAMPLE_RATE = 16000;
+    const NUM_CHANNELS = 1;
+    const PLAY_TIME_RESET_THRESHOLD_MS = 1.0;
+
+    // The protobuf type. We will load it later.
+    let Frame = null;
+
+    // The websocket connection.
+    let ws = null;
+
+    // The audio context
+    let audioContext = null;
+
+    // The audio context media stream source
+    let source = null;
+
+    // The microphone stream from getUserMedia.
+    let microphoneStream = null;
+
+    // Script processor to get data from microphone.
+    let scriptProcessor = null;
+
+    // AudioContext play time.
+    let playTime = 0;
+
+    // Last time we received a websocket message.
+    let lastMessageTime = 0;
+
+    // Whether we should be playing audio.
+    let isPlaying = false;
+
+    // Whether microphone is muted
+    let isMicMuted = false;
+
+    // For audio level visualization
+    let inputAnalyser = null;
+    let outputAnalyser = null;
+    let inputDataArray = null;
+    let outputDataArray = null;
+    let gainNode = null;
+    let micGainNode = null;
+    
+    // DOM elements
+    let startBtn = document.getElementById('startAudioBtn');
+    let stopBtn = document.getElementById('stopAudioBtn');
+    let muteBtn = document.getElementById('muteBtn');
+    let volumeControl = document.getElementById('volumeControl');
+    let volumeValue = document.getElementById('volumeValue');
+    let micVolumeControl = document.getElementById('micVolumeControl');
+    let micVolumeValue = document.getElementById('micVolumeValue');
+    let connectionStatus = document.getElementById('connectionStatus');
+    let clearLogBtn = document.getElementById('clearLogBtn');
+    let logContent = document.getElementById('logContent');
+
+    // Log function
+    function log(message, isError = false) {
+      const timestamp = new Date().toLocaleTimeString();
+      const msgClass = isError ? 'error' : '';
+      logContent.innerHTML += `<div class="${msgClass}">[${timestamp}] ${message}</div>`;
+      logContent.parentElement.scrollTop = logContent.parentElement.scrollHeight;
+    }
+
+    // Clear log
+    clearLogBtn.addEventListener('click', () => {
+      logContent.innerHTML = '';
+    });
+
+    // Initialize protocol buffers
+    const proto = protobuf.load('frames.proto', (err, root) => {
+      if (err) {
+        log('Error loading protocol buffers: ' + err, true);
+        throw err;
+      }
+      Frame = root.lookupType('pipecat.Frame');
+      const progressText = document.getElementById('progressText');
+      progressText.textContent = 'Ready! Click "Start Audio" to begin.';
+      log('Protocol buffers loaded successfully');
+
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      muteBtn.disabled = true;
+    });
+
+    function updateConnectionStatus(isConnected) {
+      if (isConnected) {
+        connectionStatus.textContent = 'Connected';
+        connectionStatus.classList.remove('status-disconnected');
+        connectionStatus.classList.add('status-connected');
+      } else {
+        connectionStatus.textContent = 'Disconnected';
+        connectionStatus.classList.remove('status-connected');
+        connectionStatus.classList.add('status-disconnected');
+      }
+    }
+
+    function initWebSocket() {
+      log('Initializing WebSocket connection...');
+      ws = new WebSocket('ws://localhost:8765');
+      // This is so `event.data` is already an ArrayBuffer.
+      ws.binaryType = 'arraybuffer';
+
+      ws.addEventListener('open', handleWebSocketOpen);
+      ws.addEventListener('message', handleWebSocketMessage);
+      ws.addEventListener('close', (event) => {
+        log(`WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`, event.code !== 1000);
+        updateConnectionStatus(false);
+        stopAudio(false);
+      });
+      ws.addEventListener('error', (event) => {
+        log('WebSocket error occurred', true);
+        console.error('WebSocket error:', event);
+      });
+    }
+
+    function handleWebSocketOpen(event) {
+      log('WebSocket connection established successfully');
+      updateConnectionStatus(true);
+
+      navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: SAMPLE_RATE,
+          channelCount: NUM_CHANNELS,
+          autoGainControl: true,
+          echoCancellation: true,
+          noiseSuppression: true,
+        }
+      }).then((stream) => {
+        microphoneStream = stream;
+        
+        // Setup audio pipeline
+        scriptProcessor = audioContext.createScriptProcessor(512, 1, 1);
+        source = audioContext.createMediaStreamSource(stream);
+        
+        // Add microphone gain control
+        micGainNode = audioContext.createGain();
+        micGainNode.gain.value = parseFloat(micVolumeControl.value);
+        
+        // Set up input analyser for visualization
+        inputAnalyser = audioContext.createAnalyser();
+        inputAnalyser.fftSize = 256;
+        inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount);
+        
+        // Connect the audio graph for input
+        source.connect(micGainNode);
+        micGainNode.connect(inputAnalyser);
+        micGainNode.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination);
+
+        log('Audio input initialized successfully');
+        
+        scriptProcessor.onaudioprocess = (event) => {
+          if (!ws || isMicMuted) {
+            return;
           }
-          Frame = root.lookupType('pipecat.Frame');
-          const progressText = document.getElementById('progressText');
-          progressText.textContent = 'We are ready! Make sure to run the server and then click `Start Audio`.';
 
-          startBtn.disabled = false;
-          stopBtn.disabled = true;
+          const audioData = event.inputBuffer.getChannelData(0);
+          const pcmS16Array = convertFloat32ToS16PCM(audioData);
+          const pcmByteArray = new Uint8Array(pcmS16Array.buffer);
+          const frame = Frame.create({
+            audio: {
+              audio: Array.from(pcmByteArray),
+              sampleRate: SAMPLE_RATE,
+              numChannels: NUM_CHANNELS
+            }
+          });
+          const encodedFrame = new Uint8Array(Frame.encode(frame).finish());
+          ws.send(encodedFrame);
+        };
+        
+        // Start the visualization loop
+        visualize();
+        
+      }).catch((error) => {
+        log('Error accessing microphone: ' + error.message, true);
+        console.error('Error accessing microphone:', error);
+      });
+    }
+
+    function handleWebSocketMessage(event) {
+      const arrayBuffer = event.data;
+      if (isPlaying) {
+        enqueueAudioFromProto(arrayBuffer);
+      }
+    }
+
+    function enqueueAudioFromProto(arrayBuffer) {
+      const parsedFrame = Frame.decode(new Uint8Array(arrayBuffer));
+      if (!parsedFrame?.audio) {
+        return false;
+      }
+
+      // Reset play time if it's been a while we haven't played anything.
+      const diffTime = audioContext.currentTime - lastMessageTime;
+      if ((playTime == 0) || (diffTime > PLAY_TIME_RESET_THRESHOLD_MS)) {
+        playTime = audioContext.currentTime;
+      }
+      lastMessageTime = audioContext.currentTime;
+
+      // We should be able to use parsedFrame.audio.audio.buffer but for
+      // some reason that contains all the bytes from the protobuf message.
+      const audioVector = Array.from(parsedFrame.audio.audio);
+      const audioArray = new Uint8Array(audioVector);
+
+      audioContext.decodeAudioData(audioArray.buffer, function(buffer) {
+        const source = new AudioBufferSourceNode(audioContext);
+        source.buffer = buffer;
+        
+        // Connect to output analyser for visualization
+        if (!outputAnalyser) {
+          outputAnalyser = audioContext.createAnalyser();
+          outputAnalyser.fftSize = 256;
+          outputDataArray = new Uint8Array(outputAnalyser.frequencyBinCount);
+        }
+        
+        // Connect to gain node for volume control
+        if (!gainNode) {
+          gainNode = audioContext.createGain();
+          gainNode.gain.value = volumeControl.value;
+        }
+        
+        source.connect(outputAnalyser);
+        outputAnalyser.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        source.start(playTime);
+        playTime = playTime + buffer.duration;
+      });
+    }
+
+    function visualize() {
+      if (!isPlaying) return;
+      
+      // Update input level meter if available
+      if (inputAnalyser && inputDataArray) {
+        inputAnalyser.getByteFrequencyData(inputDataArray);
+        let inputSum = inputDataArray.reduce((acc, val) => acc + val, 0);
+        let inputAvg = inputSum / inputDataArray.length;
+        let inputPercent = Math.min(100, (inputAvg / 128) * 100);
+        document.getElementById('inputLevelMeter').style.width = inputPercent + '%';
+      }
+      
+      // Update output level meter if available
+      if (outputAnalyser && outputDataArray) {
+        outputAnalyser.getByteFrequencyData(outputDataArray);
+        let outputSum = outputDataArray.reduce((acc, val) => acc + val, 0);
+        let outputAvg = outputSum / outputDataArray.length;
+        let outputPercent = Math.min(100, (outputAvg / 128) * 100);
+        document.getElementById('outputLevelMeter').style.width = outputPercent + '%';
+      }
+      
+      // Continue the visualization loop
+      requestAnimationFrame(visualize);
+    }
+
+    function convertFloat32ToS16PCM(float32Array) {
+      let int16Array = new Int16Array(float32Array.length);
+
+      for (let i = 0; i < float32Array.length; i++) {
+        let clampedValue = Math.max(-1, Math.min(1, float32Array[i]));
+        int16Array[i] = clampedValue < 0 ? clampedValue * 32768 : clampedValue * 32767;
+      }
+      return int16Array;
+    }
+
+    function startAudioBtnHandler() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('getUserMedia is not supported in your browser.');
+        log('getUserMedia is not supported in this browser', true);
+        return;
+      }
+
+      log('Starting audio session...');
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      muteBtn.disabled = false;
+
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        latencyHint: 'interactive',
+        sampleRate: SAMPLE_RATE
       });
 
-      function initWebSocket() {
-          ws = new WebSocket('ws://localhost:8765');
-          // This is so `event.data` is already an ArrayBuffer.
-          ws.binaryType = 'arraybuffer';
+      isPlaying = true;
+      initWebSocket();
+    }
 
-          ws.addEventListener('open', handleWebSocketOpen);
-          ws.addEventListener('message', handleWebSocketMessage);
-          ws.addEventListener('close', (event) => {
-              console.log('WebSocket connection closed.', event.code, event.reason);
-              stopAudio(false);
-          });
-          ws.addEventListener('error', (event) => console.error('WebSocket error:', event));
-      }
-
-      function handleWebSocketOpen(event) {
-        console.log('WebSocket connection established.', event)
-
-        navigator.mediaDevices.getUserMedia({
-              audio: {
-                  sampleRate: SAMPLE_RATE,
-                  channelCount: NUM_CHANNELS,
-                  autoGainControl: true,
-                  echoCancellation: true,
-                  noiseSuppression: true,
-              }
-          }).then((stream) => {
-              microphoneStream = stream;
-              // 512 is closest thing to 200ms.
-              scriptProcessor = audioContext.createScriptProcessor(512, 1, 1);
-              source = audioContext.createMediaStreamSource(stream);
-              source.connect(scriptProcessor);
-              scriptProcessor.connect(audioContext.destination);
-
-              scriptProcessor.onaudioprocess = (event) => {
-                  if (!ws) {
-                      return;
-                  }
-
-                  const audioData = event.inputBuffer.getChannelData(0);
-                  const pcmS16Array = convertFloat32ToS16PCM(audioData);
-                  const pcmByteArray = new Uint8Array(pcmS16Array.buffer);
-                  const frame = Frame.create({
-                      audio: {
-                          audio: Array.from(pcmByteArray),
-                          sampleRate: SAMPLE_RATE,
-                          numChannels: NUM_CHANNELS
-                      }
-                  });
-                  const encodedFrame = new Uint8Array(Frame.encode(frame).finish());
-                  ws.send(encodedFrame);
-              };
-          }).catch((error) => console.error('Error accessing microphone:', error));
-      }
-
-      function handleWebSocketMessage(event) {
-          const arrayBuffer = event.data;
-          if (isPlaying) {
-              enqueueAudioFromProto(arrayBuffer);
-          }
-      }
-
-      function enqueueAudioFromProto(arrayBuffer) {
-          const parsedFrame = Frame.decode(new Uint8Array(arrayBuffer));
-          if (!parsedFrame?.audio) {
-              return false;
-          }
-
-          // Reset play time if it's been a while we haven't played anything.
-          const diffTime = audioContext.currentTime - lastMessageTime;
-          if ((playTime == 0) || (diffTime > PLAY_TIME_RESET_THRESHOLD_MS)) {
-              playTime = audioContext.currentTime;
-          }
-          lastMessageTime = audioContext.currentTime;
-
-          // We should be able to use parsedFrame.audio.audio.buffer but for
-          // some reason that contains all the bytes from the protobuf message.
-          const audioVector = Array.from(parsedFrame.audio.audio);
-          const audioArray = new Uint8Array(audioVector);
-
-          audioContext.decodeAudioData(audioArray.buffer, function(buffer) {
-              const source = new AudioBufferSourceNode(audioContext);
-              source.buffer = buffer;
-              source.start(playTime);
-              source.connect(audioContext.destination);
-              playTime = playTime + buffer.duration;
-          });
-      }
-
-      function convertFloat32ToS16PCM(float32Array) {
-          let int16Array = new Int16Array(float32Array.length);
-
-          for (let i = 0; i < float32Array.length; i++) {
-              let clampedValue = Math.max(-1, Math.min(1, float32Array[i]));
-              int16Array[i] = clampedValue < 0 ? clampedValue * 32768 : clampedValue * 32767;
-          }
-          return int16Array;
-      }
-
-      function startAudioBtnHandler() {
-          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-              alert('getUserMedia is not supported in your browser.');
-              return;
-          }
-
-          startBtn.disabled = true;
-          stopBtn.disabled = false;
-
-          audioContext = new (window.AudioContext || window.webkitAudioContext)({
-              latencyHint: 'interactive',
-              sampleRate: SAMPLE_RATE
-          });
-
-          isPlaying = true;
-
-          initWebSocket();
-      }
-
-      function stopAudio(closeWebsocket) {
-          playTime = 0;
-          isPlaying = false;
-          startBtn.disabled = false;
-          stopBtn.disabled = true;
-
-          if (ws && closeWebsocket) {
-              ws.close();
-              ws = null;
-          }
-
-          if (scriptProcessor) {
-              scriptProcessor.disconnect();
-          }
-          if (source) {
-              source.disconnect();
-          }
-      }
-
-      function stopAudioBtnHandler() {
-          stopAudio(true);
-      }
-
-      startBtn.addEventListener('click', startAudioBtnHandler);
-      stopBtn.addEventListener('click', stopAudioBtnHandler);
-      startBtn.disabled = true;
+    function stopAudio(closeWebsocket) {
+      log('Stopping audio session...');
+      playTime = 0;
+      isPlaying = false;
+      startBtn.disabled = false;
       stopBtn.disabled = true;
-    </script>
-  </body>
+      muteBtn.disabled = true;
+
+      if (ws && closeWebsocket) {
+        log('Closing WebSocket connection...');
+        ws.close();
+        ws = null;
+      }
+
+      if (scriptProcessor) {
+        scriptProcessor.disconnect();
+      }
+      if (source) {
+        source.disconnect();
+      }
+      if (gainNode) {
+        gainNode.disconnect();
+      }
+      if (micGainNode) {
+        micGainNode.disconnect();
+      }
+      if (inputAnalyser) {
+        inputAnalyser.disconnect();
+      }
+      if (outputAnalyser) {
+        outputAnalyser.disconnect();
+      }
+
+      // Reset the audio meters
+      document.getElementById('inputLevelMeter').style.width = '0%';
+      document.getElementById('outputLevelMeter').style.width = '0%';
+      
+      // Reset mute state
+      isMicMuted = false;
+      muteBtn.textContent = 'Mute Microphone';
+
+      log('Audio session stopped');
+    }
+
+    function stopAudioBtnHandler() {
+      stopAudio(true);
+    }
+    
+    function toggleMute() {
+      isMicMuted = !isMicMuted;
+      muteBtn.textContent = isMicMuted ? 'Unmute Microphone' : 'Mute Microphone';
+      log(isMicMuted ? 'Microphone muted' : 'Microphone unmuted');
+    }
+
+    // Set up event listeners
+    startBtn.addEventListener('click', startAudioBtnHandler);
+    stopBtn.addEventListener('click', stopAudioBtnHandler);
+    muteBtn.addEventListener('click', toggleMute);
+    
+    // Volume controls
+    volumeControl.addEventListener('input', function() {
+      if (gainNode) {
+        gainNode.gain.value = this.value;
+      }
+      volumeValue.textContent = Math.round(this.value * 100) + '%';
+    });
+    
+    micVolumeControl.addEventListener('input', function() {
+      if (micGainNode) {
+        micGainNode.gain.value = this.value;
+      }
+      micVolumeValue.textContent = Math.round(this.value * 100) + '%';
+    });
+
+    // Initial button states
+    startBtn.disabled = true;
+    stopBtn.disabled = true;
+    muteBtn.disabled = true;
+    
+    log('Application initialized');
+  </script>
+</body>
 
 </html>

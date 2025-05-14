@@ -24,7 +24,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.gladia.stt import GladiaSTTService
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.network.websocket_server import (
     WebsocketServerParams,
@@ -39,7 +39,7 @@ load_dotenv(override=True)
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
 
-print(f"deepgram api key: ${os.getenv("DEEPGRAM_API_KEY")}")
+print(f"gladia api key: ${os.getenv("GLADIA_API_KEY")}")
 
 
 class SessionTimeoutHandler:
@@ -102,7 +102,7 @@ async def main():
 
     llm = OpenAILLMService(model="gpt-4o",api_key=os.getenv("OPENAI_API_KEY"))
 
-    stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
+    stt = GladiaSTTService(api_key=os.getenv("GLADIA_API_KEY"))
 
     tts = CartesiaTTSService(
         api_key=os.getenv("CARTESIA_API_KEY"),

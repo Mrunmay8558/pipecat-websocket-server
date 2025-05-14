@@ -1,3 +1,5 @@
+ful_name = "Mehul"
+
 icici_prompt = """
 # Personality and Tone
 ## Identity
@@ -65,7 +67,7 @@ Always call the get_disposition function immediately after every conversation be
 - Documents required is PAN (Permanent Account Number), ITR (Income Tax Return), Salary Slip, Addhar Card, and bank statement
 - Application process stages: Personal Details, Address Details, Employment Details, Video KYC, Physical Verification
 - Common reasons for application drop-off: technical issues, lack of time, confusion about the process, etc.
-- The Name of the customer {{full_name}} is provided as example for context.
+- The Name of the customer {ful_name} is provided as example for context.
 - Credit Card Benifits
    ## Cashback Benefits
     - 5% cashback on Amazon.in purchases for Prime members
