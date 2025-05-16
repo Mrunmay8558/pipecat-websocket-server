@@ -13,7 +13,7 @@ from pipecat.transports.network.fastapi_websocket import (
     FastAPIWebsocketParams
 )
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import BotInterruptionFrame, EndFrame,LLMMessagesFrame
+from pipecat.frames.frames import BotInterruptionFrame, EndFrame, LLMMessagesFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -22,11 +22,11 @@ from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.services.cartesia import CartesiaTTSService, Language
 from pipecat.services.deepgram import DeepgramSTTService
 from pipecat.services.openai import OpenAILLMService
+from pipecat.services.elevenlabs import ElevenLabsTTSService, Language
 from pipecat.transports.network.websocket_server import (
     WebsocketServerParams,
     WebsocketServerTransport,
 )
-from core.utils.prompts.agent_icici import icici_prompt
 from core.utils.prompts.agent_icici import icici_prompt
 from deepgram import LiveOptions
 from core.utils.plivo.plivo_serializer import PlivoFrameSerializer
@@ -65,22 +65,23 @@ async def pipecat_bot(websocket_client, stream_id: str):
             ),
         ) 
         
-        llm = OpenAILLMService(model="gpt-4o", api_key=os.getenv("OPENAI_API_KEY"))
+        stt = DeepgramSTTService(
+            api_key=os.getenv("DEEPGRAM_API_KEY"),
+            live_options=LiveOptions(
+                encoding="linear16",
+                language="hi",
+                model="nova-2",
+                sample_rate=16000,
+                channels=1,
+                interim_results=False,
+                smart_format=True,
+                punctuate=True,
+                profanity_filter=True,
+                vad_events=False,               
+            ),
+        )
         
-        stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"),
-                                live_options=LiveOptions(
-                                    encoding="linear16",
-                                    language="en-IN",
-                                    model="nova-2",
-                                    sample_rate=16000,
-                                    channels=1,
-                                    interim_results=False,
-                                    smart_format=True,
-                                    punctuate=True,
-                                    profanity_filter=True,
-                                    vad_events=False,
-                                ),
-                            )
+        llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
         
         tts = CartesiaTTSService(
             api_key=os.getenv("CARTESIA_API_KEY"),
@@ -88,11 +89,20 @@ async def pipecat_bot(websocket_client, stream_id: str):
             params=CartesiaTTSService.InputParams(
                 speed="normal",
                 emotion=["positivity:high", "curiosity"],
-                timestamps=False  # Disable timestamps to avoid errors
+                language=Language.HI_IN,
             ),
-            model="sonic-multilingual",
+            model="sonic-2",
             sample_rate=16000,
         )
+        
+        # tts = ElevenLabsTTSService(
+        #     api_key=os.getenv("ELEVENLABS_API_KEY"),
+        #     voice_id="2bNrEsM0omyhLiEyOwqY",
+        #     output_format="pcm_16000",
+        #     params=ElevenLabsTTSService.InputParams(
+        #         language=Language.HI_IN,  
+        #     )    
+        # )
 
         messages = [
             {
@@ -103,10 +113,11 @@ async def pipecat_bot(websocket_client, stream_id: str):
         
         context = OpenAILLMContext(messages)
         context_aggregator = llm.create_context_aggregator(context)
-
+        
+        
         pipeline = Pipeline(
             [
-                transport.input(),  # Websocket input from client
+                transport.input(),
                 stt,  # Speech-To-Text
                 context_aggregator.user(),
                 llm,  # LLM
@@ -116,11 +127,18 @@ async def pipecat_bot(websocket_client, stream_id: str):
             ]
         )
 
-        task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
+        task = PipelineTask(
+            pipeline,
+            params=PipelineParams(
+                audio_in_sample_rate=16000,
+                audio_out_sample_rate=16000,
+                allow_interruptions=True,
+            ),
+        )
         
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
-        # Kick off the conversation.
+            # Kick off the conversation.
             messages.append({"role": "system", "content": "Please introduce yourself to the user."})
             await task.queue_frames([LLMMessagesFrame(messages)])
 
@@ -139,8 +157,6 @@ async def pipecat_bot(websocket_client, stream_id: str):
         await runner.run(task)
     except Exception as e:
         logger.error(f"Error in pipecat_bot: {e}")
+        print(e)
+        await websocket_client.close()
         return False
-    
-    
-    
-    

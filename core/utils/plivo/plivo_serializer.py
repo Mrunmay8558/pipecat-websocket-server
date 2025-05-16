@@ -1,3 +1,5 @@
+
+
 import base64
 import json
 
@@ -40,14 +42,14 @@ class PlivoFrameSerializer(FrameSerializer):
 
     def deserialize(self, data: str | bytes) -> Frame | None:
         message = json.loads(data)
+
         if message["event"] != "media":
             return None
         else:
             payload_base64 = message["media"]["payload"]
             payload = base64.b64decode(payload_base64)
-
             audio_frame = InputAudioRawFrame(
-                audio=payload, num_channels=1, sample_rate=self._params.sample_rate
+                audio=payload, sample_rate=self._params.sample_rate, num_channels=1, 
             )
             return audio_frame
 
