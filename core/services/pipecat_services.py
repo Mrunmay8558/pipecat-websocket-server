@@ -45,57 +45,6 @@ logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
 
 
-    
-    
-
-llm = OpenAILLMService(model="gpt-4o", api_key=os.getenv("OPENAI_API_KEY"),live_options= LiveOptions(
-        model="nova-2-general",
-        language="en-US",
-        smart_format=True,
-        vad_events=True,
-        encoding="mu"
-        
-    ))
-    
-stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"),
-                         live_options=LiveOptions(
-                            encoding="linear16",
-                            language="en-IN",
-                            model="nova-2",
-                            sample_rate=16000,
-                            channels=1,
-                            interim_results=False,
-                            smart_format=True,
-                            punctuate=True,
-                            profanity_filter=True,
-                            vad_events=False,
-                            ),
-                        )
-    
-tts = CartesiaTTSService(
-    api_key=os.getenv("CARTESIA_API_KEY"),
-    voice_id="791d5162-d5eb-40f0-8189-f19db44611d8",
-    params=CartesiaTTSService.InputParams(
-        speed="normal",
-        emotion=["positivity:high", "curiosity"],
-    ),
-    model="sonic-multilingual",
-    sample_rate=16000,
-)
-
-
-
-messages = [
-        {
-            "role": "system",
-            "content": icici_prompt,    
-        },
-    ]
-
-context = OpenAILLMContext(messages)
-context_aggregator = llm.create_context_aggregator(context)
-
-
 async def pipecat_bot(websocket_client, stream_id: str):
     """
     Function to run the pipecat bot.
@@ -114,15 +63,58 @@ async def pipecat_bot(websocket_client, stream_id: str):
                 vad_audio_passthrough=True,
                 serializer=PlivoFrameSerializer(stream_id),
             ),
-        )   
+        ) 
+        
+        llm = OpenAILLMService(model="gpt-4o", api_key=os.getenv("OPENAI_API_KEY"))
+        
+        stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"),
+                                live_options=LiveOptions(
+                                    encoding="linear16",
+                                    language="en-IN",
+                                    model="nova-2",
+                                    sample_rate=16000,
+                                    channels=1,
+                                    interim_results=False,
+                                    smart_format=True,
+                                    punctuate=True,
+                                    profanity_filter=True,
+                                    vad_events=False,
+                                ),
+                            )
+        
+        tts = CartesiaTTSService(
+            api_key=os.getenv("CARTESIA_API_KEY"),
+            voice_id="791d5162-d5eb-40f0-8189-f19db44611d8",
+            params=CartesiaTTSService.InputParams(
+                speed="normal",
+                emotion=["positivity:high", "curiosity"],
+                timestamps=False  # Disable timestamps to avoid errors
+            ),
+            model="sonic-multilingual",
+            sample_rate=16000,
+        )
 
-        pipeline = Pipeline([
-            transport.input(),    
-            stt,                 
-            llm,                  
-            tts,                 
-            transport.output()   
-        ])
+        messages = [
+            {
+                "role": "system",
+                "content": icici_prompt,    
+            },
+        ]
+        
+        context = OpenAILLMContext(messages)
+        context_aggregator = llm.create_context_aggregator(context)
+
+        pipeline = Pipeline(
+            [
+                transport.input(),  # Websocket input from client
+                stt,  # Speech-To-Text
+                context_aggregator.user(),
+                llm,  # LLM
+                tts,  # Text-To-Speech
+                transport.output(),  # Websocket output to client
+                context_aggregator.assistant(),
+            ]
+        )
 
         task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
         
