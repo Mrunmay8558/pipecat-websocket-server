@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, status, WebSocket, Response
+from fastapi import APIRouter, HTTPException, status, WebSocket, Response, WebSocketDisconnect
 from core import logger
 from core.apis.schemas.request import RequestCall
 import plivo
 import os
 from dotenv import load_dotenv
 import json, asyncio
+from core.services.pipecat_services import pipecat_bot
 
 
 logging = logger(__name__)
@@ -94,44 +95,13 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         # Accept connection only once
         await websocket.accept()
-        logging.info("Client connected to WebSocket")
-        
-        # Initialize call_id and stream_id
-        call_id = None
-        stream_id = None
-        
-        # Process incoming messages
-        while True:
-            # Receive message from client
-            message = await websocket.receive_text()
-            
-            try:
-                data = json.loads(message)
-                event_type = data.get('event')
-                
-                if event_type == "media":
-                    # Handle media event
-                    logging.debug("Received media event")
-                    audio_payload = data['media']['payload']
-                    # Process audio with pipecat
-                    # Example: await pipecat_bot(websocket, call_id, audio_payload)
-                    
-                elif event_type == "start":
-                    # Handle start event
-                    stream_id = data['start']['streamId']
-                    call_id = data['start']['callId']
-                    logging.info(f"Incoming stream started - streamId: {stream_id}, callId: {call_id}")
-                    
-                elif event_type == "stop":
-                    # Handle stop event
-                    logging.info(f"Incoming stream stopped - streamId: {data['stop']['streamId']}")
-                    # Signal end of processing
-                    
-                else:
-                    logging.info(f"Received non-media event: {event_type}")
-                    
-            except json.JSONDecodeError as e:
-                logging.error(f"Error parsing message: {e}, Message: {message}")
+        start_data = websocket.iter_text()
+        await start_data.__anext__()
+        call_data = json.loads(await start_data.__anext__())
+        print(call_data, flush=True)
+        stream_id = call_data["streamId"]
+        print("WebSocket connection accepted")
+        await pipecat_bot(websocket, stream_id)
                 
     except WebSocketDisconnect:
         logging.info("Client disconnected normally")

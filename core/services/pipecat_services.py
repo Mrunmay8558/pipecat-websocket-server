@@ -26,9 +26,12 @@ from pipecat.transports.network.websocket_server import (
     WebsocketServerParams,
     WebsocketServerTransport,
 )
-from prompts.agent_icici import icici_prompt
+from core.utils.prompts.agent_icici import icici_prompt
 from pipecat.services.mem0.memory import Mem0MemoryService
 from core.utils.prompts.agent_icici import icici_prompt
+from deepgram import LiveOptions
+from core.utils.plivo.plivo_serializer import PlivoFrameSerializer
+from core.utils.plivo.plivo_session_handler import SessionTimeoutHandler
 
 
 # Set SSL certificate environment variables
@@ -42,51 +45,33 @@ load_dotenv(override=True)
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
 
-class SessionTimeoutHandler:
-    """Handles actions to be performed when a session times out.
-    Inputs:
-    - task: Pipeline task (used to queue frames).
-    - tts: TTS service (used to generate speech output).
-    """
 
-    def __init__(self, task, tts):
-        self.task = task
-        self.tts = tts
-        self.background_tasks = set()
-
-    async def handle_timeout(self, client_address):
-        """Handles the timeout event for a session."""
-        try:
-            logger.info(f"Connection timeout for {client_address}")
-
-            await self.task.queue_frames([BotInterruptionFrame()])
-
-            await self.tts.say(
-                "I'm sorry, we are ending the call now. Please feel free to reach out again if you need assistance."
-            )
-
-            end_call_task = asyncio.create_task(self._end_call())
-            self.background_tasks.add(end_call_task)
-            end_call_task.add_done_callback(self.background_tasks.discard)
-        except Exception as e:
-            logger.error(f"Error during session timeout handling: {e}")
-
-    async def _end_call(self):
-        """Completes the session termination process after the TTS message."""
-        try:
-            # Wait for a duration to ensure TTS has completed
-            await asyncio.sleep(15)
-
-            # Queue both BotInterruptionFrame and EndFrame to conclude the session
-            await self.task.queue_frames([BotInterruptionFrame(), EndFrame()])
-
-            logger.info("TTS completed and EndFrame pushed successfully.")
-        except Exception as e:
-            logger.error(f"Error during call termination: {e}")
-            
-llm = OpenAILLMService(model="gpt-4o", api_key=os.getenv("OPENAI_API_KEY"))
     
-stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
+    
+
+llm = OpenAILLMService(model="gpt-4o", api_key=os.getenv("OPENAI_API_KEY"),live_options= LiveOptions(
+        model="nova-2-general",
+        language="en-US",
+        smart_format=True,
+        vad_events=True,
+        encoding="mu"
+        
+    ))
+    
+stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"),
+                         live_options=LiveOptions(
+                            encoding="linear16",
+                            language="en-IN",
+                            model="nova-2",
+                            sample_rate=16000,
+                            channels=1,
+                            interim_results=False,
+                            smart_format=True,
+                            punctuate=True,
+                            profanity_filter=True,
+                            vad_events=False,
+                            ),
+                        )
     
 tts = CartesiaTTSService(
         api_key=os.getenv("CARTESIA_API_KEY"),
@@ -109,7 +94,7 @@ context = OpenAILLMContext(messages)
 context_aggregator = llm.create_context_aggregator(context)
 
 
-async def pipecat_bot(websocket: WebSocket, call_id: str, audio_packet: str):
+async def pipecat_bot(websocket_client, stream_id: str):
     """
     Function to run the pipecat bot.
     This function initializes the bot and starts the FastAPI server.
@@ -118,13 +103,16 @@ async def pipecat_bot(websocket: WebSocket, call_id: str, audio_packet: str):
     
     try:
         transport = FastAPIWebsocketTransport(
-            websocket=websocket,
-            params=FastAPIWebsocketParams(
-                audio_in_enabled=True,
-                audio_out_enabled=True,
-                vad_analyzer=SileroVADAnalyzer(),
-            )
-        )
+        websocket=websocket_client,
+        params=FastAPIWebsocketParams(
+            audio_out_enabled=True,
+            add_wav_header=False,
+            vad_enabled=True,
+            vad_analyzer=SileroVADAnalyzer(),
+            vad_audio_passthrough=True,
+            serializer=PlivoFrameSerializer(stream_id),
+        ),
+    )
 
         pipeline = Pipeline([
             transport.input(),    
@@ -152,7 +140,8 @@ async def pipecat_bot(websocket: WebSocket, call_id: str, audio_packet: str):
             logger.info("Client disconnected")
             await task.queue_frames([EndFrame()])
         
-        await PipelineRunner().run(task)
+        runner = PipelineRunner(handle_sigint=False)
+        await runner.run(task)
     except Exception as e:
         logger.error(f"Error in pipecat_bot: {e}")
         return False
