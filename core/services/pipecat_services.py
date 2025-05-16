@@ -13,21 +13,20 @@ from pipecat.transports.network.fastapi_websocket import (
     FastAPIWebsocketParams
 )
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import BotInterruptionFrame, EndFrame
+from pipecat.frames.frames import BotInterruptionFrame, EndFrame,LLMMessagesFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
-from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.cartesia import CartesiaTTSService, Language
+from pipecat.services.deepgram import DeepgramSTTService
+from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.network.websocket_server import (
     WebsocketServerParams,
     WebsocketServerTransport,
 )
 from core.utils.prompts.agent_icici import icici_prompt
-from pipecat.services.mem0.memory import Mem0MemoryService
 from core.utils.prompts.agent_icici import icici_prompt
 from deepgram import LiveOptions
 from core.utils.plivo.plivo_serializer import PlivoFrameSerializer
@@ -74,19 +73,22 @@ stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"),
                         )
     
 tts = CartesiaTTSService(
-        api_key=os.getenv("CARTESIA_API_KEY"),
-        voice_id="791d5162-d5eb-40f0-8189-f19db44611d8",
-    )
-    
-memory = Mem0MemoryService(
-        api_key=os.getenv("MEMO_API_KEY"),
-        user_id="user123",
-    )
+    api_key=os.getenv("CARTESIA_API_KEY"),
+    voice_id="791d5162-d5eb-40f0-8189-f19db44611d8",
+    params=CartesiaTTSService.InputParams(
+        speed="normal",
+        emotion=["positivity:high", "curiosity"],
+    ),
+    model="sonic-multilingual",
+    sample_rate=16000,
+)
+
+
 
 messages = [
         {
             "role": "system",
-            "content": icici_prompt,
+            "content": icici_prompt,    
         },
     ]
 
@@ -103,16 +105,16 @@ async def pipecat_bot(websocket_client, stream_id: str):
     
     try:
         transport = FastAPIWebsocketTransport(
-        websocket=websocket_client,
-        params=FastAPIWebsocketParams(
-            audio_out_enabled=True,
-            add_wav_header=False,
-            vad_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(),
-            vad_audio_passthrough=True,
-            serializer=PlivoFrameSerializer(stream_id),
-        ),
-    )
+            websocket=websocket_client,
+            params=FastAPIWebsocketParams(
+                audio_out_enabled=True,
+                add_wav_header=False,
+                vad_enabled=True,
+                vad_analyzer=SileroVADAnalyzer(),
+                vad_audio_passthrough=True,
+                serializer=PlivoFrameSerializer(stream_id),
+            ),
+        )   
 
         pipeline = Pipeline([
             transport.input(),    
@@ -122,18 +124,19 @@ async def pipecat_bot(websocket_client, stream_id: str):
             transport.output()   
         ])
 
-        task = PipelineTask(pipeline)
+        task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
         
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
+        # Kick off the conversation.
             messages.append({"role": "system", "content": "Please introduce yourself to the user."})
-            await task.queue_frames([context_aggregator.user().get_context_frame()])
+            await task.queue_frames([LLMMessagesFrame(messages)])
 
-        @transport.event_handler("on_session_timeout")
-        async def on_session_timeout(transport, client):
-            logger.info(f"Entering in timeout for {client.remote_address}")
-            timeout_handler = SessionTimeoutHandler(task, tts)
-            await timeout_handler.handle_timeout(client.remote_address)
+        # @transport.event_handler("on_session_timeout")
+        # async def on_session_timeout(transport, client):
+        #     logger.info(f"Entering in timeout for {client.remote_address}")
+        #     timeout_handler = SessionTimeoutHandler(task, tts)
+        #     await timeout_handler.handle_timeout(client.remote_address)
             
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):

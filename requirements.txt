@@ -1,6 +1,6 @@
 python-dotenv
-pipecat-ai[cartesia,openai,silero,websocket,deepgram,mem0]
+pipecat-ai[cartesia,openai,silero,websocket,deepgram,mem0] @ git+https://github.com/pipecat-ai/pipecat.git@af821d8e953e0f4e86cb78939332b6a69abbfc18
 uvicorn
 fastapi
 plivo
-pydantic==2.10.4
+pydantic

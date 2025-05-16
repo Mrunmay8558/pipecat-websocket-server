@@ -40,7 +40,6 @@ class PlivoFrameSerializer(FrameSerializer):
 
     def deserialize(self, data: str | bytes) -> Frame | None:
         message = json.loads(data)
-
         if message["event"] != "media":
             return None
         else:

@@ -70,7 +70,7 @@ def webhook():
                 streamTimeout="86400" 
                 keepCallAlive="true" 
                 bidirectional="true" 
-                contentType="audio/x-mulaw;rate=8000" 
+                contentType="audio/x-l16;rate=16000"
                 audioTrack="inbound" 
                 statusCallbackUrl="https://pegasus-immortal-stud.ngrok-free.app/callbacks"
             >
