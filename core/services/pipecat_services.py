@@ -134,6 +134,8 @@ async def pipecat_bot(websocket_client, stream_id: str):
                 audio_out_sample_rate=16000,
                 allow_interruptions=True,
                 enable_metrics=True,
+                report_only_initial_ttfb=True,
+                enable_usage_metrics=True,
             ),
         )
         

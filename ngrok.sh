@@ -1,1 +1,1 @@
-ngrok http --url=pegasus-immortal-stud.ngrok-free.app 8000
+ngrok http --url=pegasus-immortal-stud.ngrok-free.app 3500

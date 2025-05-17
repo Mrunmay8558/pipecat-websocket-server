@@ -15,8 +15,6 @@ load_dotenv(override=True)
 
 plivo_router = APIRouter()
 
-print(os.getenv("PLIVO_AUTH_ID"))
-
 client = plivo.RestClient(os.getenv("PLIVO_AUTH_ID"),os.getenv("PLIVO_AUTH_TOKEN"))
 
 @plivo_router.post("/v1/call_disposition")
