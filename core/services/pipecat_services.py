@@ -27,7 +27,7 @@ from pipecat.transports.network.websocket_server import (
     WebsocketServerParams,
     WebsocketServerTransport,
 )
-from core.utils.prompts.agent_icici import icici_prompt
+from core.utils.prompts.agent_icici import icici_prompt,icici_prompt_v2
 from deepgram import LiveOptions
 from core.utils.plivo.plivo_serializer import PlivoFrameSerializer
 from core.utils.plivo.plivo_session_handler import SessionTimeoutHandler
@@ -85,9 +85,9 @@ async def pipecat_bot(websocket_client, stream_id: str):
         
         tts = CartesiaTTSService(
             api_key=os.getenv("CARTESIA_API_KEY"),
-            voice_id="791d5162-d5eb-40f0-8189-f19db44611d8",
+            voice_id="28ca2041-5dda-42df-8123-f58ea9c3da00",
             params=CartesiaTTSService.InputParams(
-                speed="normal",
+                speed="slow",
                 emotion=["positivity:high", "curiosity"],
                 language=Language.HI_IN,
             ),
@@ -107,7 +107,7 @@ async def pipecat_bot(websocket_client, stream_id: str):
         messages = [
             {
                 "role": "system",
-                "content": icici_prompt,    
+                "content": icici_prompt_v2,    
             },
         ]
         
@@ -133,6 +133,7 @@ async def pipecat_bot(websocket_client, stream_id: str):
                 audio_in_sample_rate=16000,
                 audio_out_sample_rate=16000,
                 allow_interruptions=True,
+                enable_metrics=True,
             ),
         )
         
